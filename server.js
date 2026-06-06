@@ -3,17 +3,142 @@ require("dotenv").config();
 const Fastify = require("fastify");
 const fs = require("fs-extra");
 
+const DEFAULT_BODY_LIMIT_MB = 50;
+
+function readBodyLimitBytes() {
+  const configured = Number(process.env.REQUEST_BODY_LIMIT_MB);
+  const mb = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_BODY_LIMIT_MB;
+  return Math.floor(mb * 1024 * 1024);
+}
+
 const app = Fastify({
   logger: true,
-  bodyLimit: 10 * 1024 * 1024
+  bodyLimit: readBodyLimitBytes()
 });
 
 app.register(require("@fastify/formbody"));
 
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = process.env.TARGET_API_URL;
 const TIMELINE_FILE = "enhanced_messages.json";
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
+const DEFAULT_RESTART_COMMAND = "pm2 restart gateway wake-up";
+
+// ========================
+// 多模态消息处理
+// ========================
+function shouldForwardMultimodalContent() {
+  const mode = (process.env.MULTIMODAL_MODE || "text").trim().toLowerCase();
+  return mode === "passthrough" || mode === "vision" || mode === "true";
+}
+
+function isDataImageUrl(value) {
+  return typeof value === "string" && /^data:image\//i.test(value);
+}
+
+function isImageContentPart(part) {
+  if (!part || typeof part !== "object") return false;
+  if (part.image_url) return true;
+  const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+  return type.includes("image");
+}
+
+function isFileContentPart(part) {
+  if (!part || typeof part !== "object") return false;
+  if (part.file) return true;
+  const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+  return type.includes("file");
+}
+
+function getTextFromContentPart(part) {
+  if (typeof part === "string") return part;
+  if (!part || typeof part !== "object") return "";
+  const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+  if (type === "text" || type === "input_text") return part.text || part.content || "";
+  if (typeof part.text === "string") return part.text;
+  return "";
+}
+
+function normalizeContentToText(content) {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+
+  if (Array.isArray(content)) {
+    const parts = content
+      .map(part => {
+        const text = getTextFromContentPart(part).trim();
+        if (text) return text;
+        if (isImageContentPart(part)) return "[图片]";
+        if (isFileContentPart(part)) return "[文件]";
+        return "";
+      })
+      .filter(Boolean);
+    return parts.join("\n");
+  }
+
+  if (isImageContentPart(content)) return "[图片]";
+  if (isFileContentPart(content)) return "[文件]";
+  return "[非文本内容]";
+}
+
+function normalizeMessageForTimeline(msg) {
+  return { ...msg, content: normalizeContentToText(msg.content) };
+}
+
+function prepareMessageForLLM(msg) {
+  if (msg.role === "assistant" && msg.tool_calls) return msg;
+  if (msg.role === "tool") return msg;
+  if (msg.role === "system") return { ...msg, content: normalizeContentToText(msg.content) };
+  if (typeof msg.content === "string") return msg;
+
+  if (Array.isArray(msg.content) && shouldForwardMultimodalContent()) return msg;
+
+  const textContent = normalizeContentToText(msg.content);
+  if (!textContent) return null;
+  return { ...msg, content: textContent };
+}
+
+function sanitizeForLog(value) {
+  if (typeof value === "string") {
+    if (isDataImageUrl(value)) {
+      const commaIndex = value.indexOf(",");
+      const prefix = commaIndex >= 0 ? value.slice(0, commaIndex + 1) : value.slice(0, 40);
+      return `${prefix}[base64 image omitted]`;
+    }
+    if (value.length > 1000) return `${value.slice(0, 1000)}... [truncated ${value.length - 1000} chars]`;
+    return value;
+  }
+
+  if (Array.isArray(value)) return value.map(sanitizeForLog);
+
+  if (value && typeof value === "object") {
+    const sanitized = {};
+    for (const [key, child] of Object.entries(value)) {
+      sanitized[key] = sanitizeForLog(child);
+    }
+    return sanitized;
+  }
+
+  return value;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function safeJsonForInlineScript(value) {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
 
 // ========================
 // 读取 timeline
@@ -63,14 +188,13 @@ function saveTimestampDB(db) {
 }
 
 function makeFingerprint(msg) {
-  const raw = msg.content || "";
-  const content = (typeof raw === "string" ? raw.trim().slice(0, 150) : "");
+  const raw = normalizeContentToText(msg.content);
+  const content = raw.trim().slice(0, 150);
   return `${msg.role}::${content}`;
 }
 
 function makeFingerprintStripped(msg) {
-  const raw = msg.content || "";
-  if (typeof raw !== "string") return `${msg.role}::`;
+  const raw = normalizeContentToText(msg.content);
   let content = raw.trim();
   content = content
     .replace(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}\s*/, "")
@@ -82,7 +206,7 @@ function makeFingerprintStripped(msg) {
 }
 
 function extractTimestampWithMemory(msg, tsDB) {
-  const fromContent = extractTimestamp(msg.content);
+  const fromContent = extractTimestamp(normalizeContentToText(msg.content));
   if (fromContent) return fromContent;
   const fp = makeFingerprint(msg);
   if (tsDB[fp]) return new Date(tsDB[fp]);
@@ -96,7 +220,7 @@ function extractTimestampWithMemory(msg, tsDB) {
 // ========================
 function isSpecialEvent(msg) {
   if (msg.role !== "assistant") return false;
-  const c = msg.content || "";
+  const c = normalizeContentToText(msg.content);
   return c.includes("刚刚给宝宝发了 Bark") || c.includes("自动唤醒：本次未发送 Bark");
 }
 
@@ -104,13 +228,15 @@ function isRealMessageForTimeline(msg) {
   if (msg.role === "system") return false;
   if (msg.tool_calls) return false;
   if (isSpecialEvent(msg)) return false;
-  if (msg.role === "user" && msg.content && typeof msg.content === "string" && msg.content.trim().startsWith("<system>")) return false;
+  const contentText = normalizeContentToText(msg.content);
+  if (msg.role === "user" && contentText.trim().startsWith("<system>")) return false;
   return msg.role === "user" || msg.role === "assistant";
 }
 
 function isSystemRule(msg) {
   if (msg.role === "system") return true;
-  if (msg.role === "user" && msg.content && typeof msg.content === "string" && msg.content.trim().startsWith("<system>")) return true;
+  const contentText = normalizeContentToText(msg.content);
+  if (msg.role === "user" && contentText.trim().startsWith("<system>")) return true;
   return false;
 }
 
@@ -119,11 +245,15 @@ function isSystemRule(msg) {
 // ========================
 function buildTimeline(kelivoMessages, tsDB) {
   const oldTimeline = loadTimeline();
-  const newSystemMessages = kelivoMessages.filter(msg => msg.role === "system");
+  const newSystemMessages = kelivoMessages
+    .filter(msg => msg.role === "system")
+    .map(normalizeMessageForTimeline);
   const latestSP = newSystemMessages.length > 0 ? newSystemMessages[newSystemMessages.length - 1] : null;
   const oldSP = oldTimeline.find(msg => msg.role === "system");
 
-  const newRealMessages = kelivoMessages.filter(isRealMessageForTimeline);
+  const newRealMessages = kelivoMessages
+    .filter(isRealMessageForTimeline)
+    .map(normalizeMessageForTimeline);
 
   const oldSpecialEvents = oldTimeline.filter(isSpecialEvent).sort((a, b) => {
     const timeA = extractTimestampWithMemory(a, tsDB);
@@ -215,6 +345,22 @@ let wakeUpLastHeartbeat = null;
 // 预设方案
 // ========================
 const PRESETS_FILE = "./presets.json";
+const ENV_FILE = ".env";
+const PREFERRED_ENV_ORDER = [
+  "TARGET_API_URL",
+  "TARGET_API_KEY",
+  "MODEL_NAME",
+  "BARK_KEY",
+  "CUSTOM_ICON_URL",
+  "REQUEST_BODY_LIMIT_MB",
+  "MULTIMODAL_MODE",
+  "PORT",
+  "GATEWAY_BASE_URL",
+  "TIME_ZONE",
+  "RESTART_COMMAND",
+  "ADMIN_USER",
+  "ADMIN_PASSWORD"
+];
 
 function loadPresets() {
   if (!fs.existsSync(PRESETS_FILE)) return [];
@@ -223,6 +369,49 @@ function loadPresets() {
 
 function savePresets(presets) {
   fs.writeJsonSync(PRESETS_FILE, presets, { spaces: 2 });
+}
+
+function wantsJsonResponse(req) {
+  const contentType = req.headers["content-type"] || "";
+  const accept = req.headers.accept || "";
+  return contentType.includes("application/json") || accept.includes("application/json");
+}
+
+function loadEnvFileObject() {
+  const result = {};
+  try {
+    const envContent = fs.readFileSync(ENV_FILE, "utf-8");
+    for (const line of envContent.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eqIndex = trimmed.indexOf("=");
+      if (eqIndex <= 0) continue;
+      const key = trimmed.slice(0, eqIndex).trim();
+      const value = trimmed.slice(eqIndex + 1).trim();
+      result[key] = value;
+    }
+  } catch {}
+  return result;
+}
+
+function serializeEnvValue(value) {
+  return String(value ?? "").replace(/\r?\n/g, "\\n");
+}
+
+function writeEnvUpdates(updates) {
+  const merged = { ...loadEnvFileObject(), ...updates };
+  const orderedKeys = [
+    ...PREFERRED_ENV_ORDER.filter(key => Object.prototype.hasOwnProperty.call(merged, key)),
+    ...Object.keys(merged)
+      .filter(key => !PREFERRED_ENV_ORDER.includes(key))
+      .sort()
+  ];
+  const lines = orderedKeys.map(key => `${key}=${serializeEnvValue(merged[key])}`);
+  fs.writeFileSync(ENV_FILE, lines.join("\n") + "\n");
+}
+
+function readRestartCommand() {
+  return readEnvValue("RESTART_COMMAND") || DEFAULT_RESTART_COMMAND;
 }
 
 // ========================
@@ -254,7 +443,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     const body = req.body;
     console.log("\n============================");
     console.log("收到 Kelivo 完整请求 Body:");
-    console.log(JSON.stringify(body, null, 2));
+    console.log(JSON.stringify(sanitizeForLog(body), null, 2));
     console.log("============================\n");
 
     const kelivoMessages = body.messages || [];
@@ -265,7 +454,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     for (const msg of kelivoMessages) {
       if (msg.role === "system") continue;
       if (msg.role === "tool") continue;
-      const ts = extractTimestamp(msg.content);
+      const ts = extractTimestamp(normalizeContentToText(msg.content));
       if (!ts) continue;
       const fp = makeFingerprint(msg);
       const fpStripped = makeFingerprintStripped(msg);
@@ -277,12 +466,11 @@ app.post("/v1/chat/completions", async (req, reply) => {
     const finalTimeline = buildTimeline(kelivoMessages, tsDB);
     saveTimeline(finalTimeline);
 
-    // 过滤图片消息，只保留纯文本
-    const llmMessages = kelivoMessages.filter(msg => {
-      if (msg.role === "system") return true;
-      if (msg.role === "tool") return true;
-      return typeof msg.content === "string";
-    });
+    // Kelivo 发图时 content 常是数组。默认转为文本占位，避免非视觉模型/中转站报错。
+    // 如上游支持 OpenAI 兼容视觉格式，可设置 MULTIMODAL_MODE=passthrough 原样转发。
+    const llmMessages = kelivoMessages
+      .map(prepareMessageForLLM)
+      .filter(Boolean);
 
     const oldEvents = stripPosition(
       oldTimeline.filter(isSpecialEvent).sort((a, b) => {
@@ -315,7 +503,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
 
     // 调试打印
     console.log("\n===== 转发给 LLM 的 Messages（前 10 条）=====\n");
-    console.log(JSON.stringify(llmMessages.slice(0, 10), null, 2));
+    console.log(JSON.stringify(sanitizeForLog(llmMessages.slice(0, 10)), null, 2));
 
     // ---- 自动修复不完整的 tool 调用（双向清理） ----
     // 第一遍：标记需要移除的索引
@@ -383,6 +571,10 @@ app.post("/v1/chat/completions", async (req, reply) => {
       llmMessages.splice(idx, 1);
     }
 
+    if (!TARGET_API_URL || !process.env.TARGET_API_KEY) {
+      return reply.code(500).send({ error: "TARGET_API_URL / TARGET_API_KEY 未配置" });
+    }
+
     // 请求模型
     const response = await fetch(TARGET_API_URL, {
       method: "POST",
@@ -392,6 +584,10 @@ app.post("/v1/chat/completions", async (req, reply) => {
       },
       body: JSON.stringify({ ...body, messages: llmMessages })
     });
+
+    if (!response.body) {
+      return reply.code(response.status).send({ error: "上游 API 没有返回可读取的响应体" });
+    }
 
     reply.raw.writeHead(response.status, {
       "Content-Type": "text/event-stream",
@@ -432,7 +628,7 @@ app.post("/internal/wake-event", async (req, reply) => {
 // ========================
 function readEnvValue(key) {
   try {
-    const envContent = fs.readFileSync(".env", "utf-8");
+    const envContent = fs.readFileSync(ENV_FILE, "utf-8");
     const lines = envContent.split("\n");
     for (const line of lines) {
       const trimmed = line.trim();
@@ -473,15 +669,14 @@ app.get("/admin", { preHandler: basicAuth }, async (req, reply) => {
     : "离线或未启动";
 
   const currentUrl = readEnvValue("TARGET_API_URL");
-  const currentKey = readEnvValue("TARGET_API_KEY").substring(0, 10) + "…";
   const currentModel = readEnvValue("MODEL_NAME");
-  const currentBark = readEnvValue("BARK_KEY").substring(0, 10) + "…";
   const currentIcon = readEnvValue("CUSTOM_ICON_URL");
 
   const authToken = Buffer.from(`${process.env.ADMIN_USER}:${process.env.ADMIN_PASSWORD}`).toString("base64");
 
   const presets = loadPresets();
-  const presetsJson = JSON.stringify(presets);
+  const presetsJson = safeJsonForInlineScript(presets);
+  const authHeaderJson = safeJsonForInlineScript(`Basic ${authToken}`);
 
 const html = `<!DOCTYPE html>
 <html lang="zh">
@@ -846,17 +1041,17 @@ const html = `<!DOCTYPE html>
 
     <!-- 配置表单 -->
     <div class="config-box">
-      <form action="/admin/save" method="post">
+      <form id="configForm" onsubmit="saveConfig(event)">
         <label>API URL</label>
-        <input name="target_url" id="f_url" value="${currentUrl}">
+        <input name="target_url" id="f_url" value="${escapeHtml(currentUrl)}">
         <label>API Key</label>
         <input name="target_key" id="f_key" placeholder="留空不修改">
         <label>Model Name</label>
-        <input name="model_name" id="f_model" value="${currentModel}">
+        <input name="model_name" id="f_model" value="${escapeHtml(currentModel)}">
         <label>Bark Key</label>
-        <input name="bark_key" placeholder="留空不修改">
+        <input name="bark_key" id="f_bark" placeholder="留空不修改">
         <label>Bark Icon URL</label>
-        <input name="custom_icon" value="${currentIcon}" placeholder="可选">
+        <input name="custom_icon" id="f_icon" value="${escapeHtml(currentIcon)}" placeholder="可选">
         <button type="submit" class="save">保存配置</button>
       </form>
     </div>
@@ -867,8 +1062,17 @@ const html = `<!DOCTYPE html>
 
   <script>
     // ====== 以下脚本保持不变 ======
-    const AUTH_HEADER = "Basic ${authToken}";
+    const AUTH_HEADER = ${authHeaderJson};
     let presets = ${presetsJson};
+
+    function escapeHtmlText(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
 
     function renderPresets() {
       const list = document.getElementById("presetList");
@@ -877,9 +1081,8 @@ const html = `<!DOCTYPE html>
         return;
       }
       list.innerHTML = presets.map((p, idx) => {
-        const safeName = p.name.replace(/'/g, "\\'");
         return '<div class="preset-item">' +
-          '<button class="preset-btn" onclick="applyPreset(' + idx + ')">' + p.name + '<span>' + p.model_name + '</span></button>' +
+          '<button class="preset-btn" onclick="applyPreset(' + idx + ')">' + escapeHtmlText(p.name) + '<span>' + escapeHtmlText(p.model_name) + '</span></button>' +
           '<button class="preset-del" onclick="deletePreset(' + idx + ')">删除</button>' +
         '</div>';
       }).join("");
@@ -891,6 +1094,40 @@ const html = `<!DOCTYPE html>
       document.getElementById("f_model").value = p.model_name || "";
       if (p.target_key) document.getElementById("f_key").value = p.target_key;
       document.querySelector(".config-box").scrollIntoView({ behavior: "smooth" });
+    }
+
+    async function saveConfig(event) {
+      event.preventDefault();
+      const payload = {
+        target_url: document.getElementById("f_url").value.trim(),
+        target_key: document.getElementById("f_key").value.trim(),
+        model_name: document.getElementById("f_model").value.trim(),
+        bark_key: document.getElementById("f_bark").value.trim(),
+        custom_icon: document.getElementById("f_icon").value.trim()
+      };
+
+      if (!payload.target_url || !payload.model_name) {
+        alert("请填写 API 地址和模型名称");
+        return;
+      }
+
+      try {
+        const resp = await fetch("/admin/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": AUTH_HEADER },
+          body: JSON.stringify(payload)
+        });
+        const result = await resp.json();
+        if (result.success) {
+          document.getElementById("f_key").value = "";
+          document.getElementById("f_bark").value = "";
+          alert("配置已保存，现在可以点击重启按钮让新配置生效。");
+        } else {
+          alert("保存失败：" + (result.error || "未知错误"));
+        }
+      } catch (e) {
+        alert("请求失败：" + e.message);
+      }
     }
 
     async function savePreset() {
@@ -945,7 +1182,7 @@ const html = `<!DOCTYPE html>
           alert("重启成功！页面稍后自动刷新。");
           setTimeout(() => location.reload(), 3000);
         } else {
-          alert("重启失败：" + (r.error || "未知错误"));
+          alert("重启失败：" + (result.error || "未知错误"));
         }
       } catch (e) {
         alert("请求失败：" + e.message);
@@ -963,23 +1200,32 @@ const html = `<!DOCTYPE html>
 // 管理保存 POST /admin/save
 // ========================
 app.post("/admin/save", { preHandler: basicAuth }, async (req, reply) => {
-  const { target_url, target_key, model_name, bark_key, custom_icon } = req.body || {};
+  try {
+    const { target_url, target_key, model_name, bark_key, custom_icon } = req.body || {};
 
-  const finalTargetKey = target_key || readEnvValue("TARGET_API_KEY");
-  const finalBarkKey = bark_key || readEnvValue("BARK_KEY");
+    if (!target_url || !model_name) {
+      return reply.code(400).send({ error: "target_url / model_name 必填" });
+    }
 
-  const newEnv = `TARGET_API_URL=${target_url || ""}
-TARGET_API_KEY=${finalTargetKey}
-MODEL_NAME=${model_name || ""}
-BARK_KEY=${finalBarkKey}
-CUSTOM_ICON_URL=${custom_icon || ""}
-ADMIN_USER=${process.env.ADMIN_USER}
-ADMIN_PASSWORD=${process.env.ADMIN_PASSWORD}
-`;
-  fs.writeFileSync(".env", newEnv);
-  console.log("\n✅ .env 已更新，可通过管理页重启服务\n");
+    const finalTargetKey = target_key || readEnvValue("TARGET_API_KEY");
+    const finalBarkKey = bark_key || readEnvValue("BARK_KEY");
 
-  reply.type("text/html").send(`<!DOCTYPE html>
+    writeEnvUpdates({
+      TARGET_API_URL: target_url,
+      TARGET_API_KEY: finalTargetKey,
+      MODEL_NAME: model_name,
+      BARK_KEY: finalBarkKey,
+      CUSTOM_ICON_URL: custom_icon || "",
+      ADMIN_USER: readEnvValue("ADMIN_USER"),
+      ADMIN_PASSWORD: readEnvValue("ADMIN_PASSWORD")
+    });
+    console.log("\n✅ .env 已更新，可通过管理页重启服务\n");
+
+    if (wantsJsonResponse(req)) {
+      return reply.send({ success: true });
+    }
+
+    reply.type("text/html").send(`<!DOCTYPE html>
 <html lang="zh">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>已保存</title></head>
 <body style="text-align:center;font-family:-apple-system,sans-serif;padding:40px;">
@@ -987,6 +1233,10 @@ ADMIN_PASSWORD=${process.env.ADMIN_PASSWORD}
   <p>现在可以返回管理页，点击重启按钮让新配置生效。</p>
   <a href="/admin">← 返回设置</a>
 </body></html>`);
+  } catch (err) {
+    console.error(err);
+    reply.code(500).send({ error: err.message });
+  }
 });
 
 // ========================
@@ -1028,12 +1278,14 @@ app.post("/internal/heartbeat", async (req, reply) => {
 // 管理页一键重启
 // ========================
 app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
+  const restartCommand = readRestartCommand();
+
   // 立即回复，避免重启时连接中断
-  reply.send({ success: true, output: "重启指令已发送，请稍等..." });
+  reply.send({ success: true, output: `重启指令已发送：${restartCommand}` });
   
-  // 稍后重启（使用 pm2 完整路径）
+  // 稍后重启。默认只重启本项目的两个进程；可通过 RESTART_COMMAND 自定义。
   const { exec } = require("child_process");
-  exec("/opt/homebrew/bin/pm2 restart all", (err, stdout, stderr) => {
+  exec(restartCommand, (err, stdout, stderr) => {
     if (err) {
       console.error("重启失败:", stderr);
     } else {

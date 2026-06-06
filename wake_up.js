@@ -3,14 +3,65 @@ const fs = require("fs");
 const path = require("path");
 
 const TIMELINE_PATH = path.join(__dirname, "enhanced_messages.json");
-const GATEWAY_URL = "http://localhost:3000/internal/wake-event";
+const PORT = Number(process.env.PORT) || 3000;
+const GATEWAY_BASE_URL = (process.env.GATEWAY_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
+const GATEWAY_URL = `${GATEWAY_BASE_URL}/internal/wake-event`;
+const HEARTBEAT_URL = `${GATEWAY_BASE_URL}/internal/heartbeat`;
+const TIME_ZONE = process.env.TIME_ZONE || "Europe/London";
+
+function normalizeContentToText(content) {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === "string") return part;
+        if (!part || typeof part !== "object") return "";
+        const type = typeof part.type === "string" ? part.type.toLowerCase() : "";
+        if (type === "text" || type === "input_text") return part.text || part.content || "";
+        if (part.image_url || type.includes("image")) return "[图片]";
+        if (part.file || type.includes("file")) return "[文件]";
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (content && typeof content === "object") {
+    const type = typeof content.type === "string" ? content.type.toLowerCase() : "";
+    if (content.image_url || type.includes("image")) return "[图片]";
+    if (content.file || type.includes("file")) return "[文件]";
+  }
+
+  return "[非文本内容]";
+}
+
+function loadTimelineMessages() {
+  if (!fs.existsSync(TIMELINE_PATH)) {
+    console.log("未找到 enhanced_messages.json");
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(TIMELINE_PATH, "utf-8"));
+    if (!Array.isArray(parsed)) {
+      console.log("enhanced_messages.json 格式错误：顶层不是数组");
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    console.error("读取 enhanced_messages.json 失败:", err.message);
+    return null;
+  }
+}
 
 function getNow() {
   return new Date();
 }
 
 function getChinaTimeString() {
-  return new Date().toLocaleString("zh-CN", { timeZone: "Europe/London" });
+  return new Date().toLocaleString("zh-CN", { timeZone: TIME_ZONE });
 }
 
 function getLocalTimeString() {
@@ -36,7 +87,8 @@ function getLastUserTime(messages) {
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
     if (msg.role === "user") {
-      const match = msg.content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
+      const content = normalizeContentToText(msg.content);
+      const match = content.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})/);
       if (match) return new Date(match[1]);
     }
   }
@@ -87,13 +139,8 @@ async function runWakeUp() {
   console.log("开始自动唤醒");
   console.log("==========================\n");
 
-  if (!fs.existsSync(TIMELINE_PATH)) {
-    console.log("未找到 enhanced_messages.json");
-    return;
-  }
-
-  const raw = fs.readFileSync(TIMELINE_PATH, "utf-8");
-  let messages = JSON.parse(raw);
+  const messages = loadTimelineMessages();
+  if (!messages) return;
 
   const lastUserTime = getLastUserTime(messages);
   if (!lastUserTime) {
@@ -115,14 +162,14 @@ async function runWakeUp() {
   const historyText = cleanMessages
     .filter(msg => msg.role !== "system")
     .filter(msg => {
-      const c = msg.content || "";
+      const c = normalizeContentToText(msg.content);
       return !c.includes("<memories>") && !c.includes("记忆库使用策略");
     })
     .map(msg => {
       const userDisplay = process.env.USER_DISPLAY_NAME || "用户";
       const aiDisplay = process.env.AI_DISPLAY_NAME || "AI";
       const role = msg.role === "user" ? userDisplay : aiDisplay;
-      let content = msg.content;
+      let content = normalizeContentToText(msg.content);
       if (content.includes("## Memories")) {
         content = content.split("## Memories")[0];
       }
@@ -132,7 +179,7 @@ async function runWakeUp() {
 
   const baseSystemPrompt = cleanMessages.find(msg => msg.role === "system");
   const cleanSP = baseSystemPrompt 
-    ? baseSystemPrompt.content.split("## Memories")[0].trim() 
+    ? normalizeContentToText(baseSystemPrompt.content).split("## Memories")[0].trim()
     : "";
 
   const wakeMessages = [
@@ -156,6 +203,11 @@ ${historyText}`
   console.log("\n===== WAKE MESSAGES =====\n");
   console.log(JSON.stringify(wakeMessages, null, 2));
 
+  if (!process.env.TARGET_API_URL || !process.env.TARGET_API_KEY || !process.env.MODEL_NAME) {
+    console.log("缺少 TARGET_API_URL / TARGET_API_KEY / MODEL_NAME，跳过本次唤醒");
+    return;
+  }
+
   const response = await fetch(process.env.TARGET_API_URL, {
     method: "POST",
     headers: {
@@ -171,17 +223,32 @@ ${historyText}`
     })
   });
 
-  const data = await response.json();
+  const responseText = await response.text();
+  let data;
+  try {
+    data = JSON.parse(responseText);
+  } catch {
+    throw new Error(`模型返回的不是 JSON（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
+  }
+  if (!response.ok) {
+    throw new Error(`模型请求失败（HTTP ${response.status}）：${responseText.slice(0, 300)}`);
+  }
+
   console.log("\nWake Result:\n");
   console.log(JSON.stringify(data, null, 2));
 
-  const aiText = data.choices?.[0]?.message?.content || "";
+  const aiText = normalizeContentToText(data.choices?.[0]?.message?.content).trim();
   console.log("\nAI内容：\n");
   console.log(aiText);
 
+  let eventContent;
+
+  if (!aiText) {
+    console.log("\nAI 返回空内容，本次不发送 Bark\n");
+    eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：模型空回复）`;
   // 判断 AI 是否明确要静默
-  const noActionMatch = aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/);
-  if (noActionMatch) {
+  } else if (aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/)) {
+    const noActionMatch = aiText.match(/^\[NO_ACTION\]\s*(.{0,20})?/);
     // AI 选择不发送 Bark
     console.log("\nAI 选择不发送 Bark\n");
     let reason = (noActionMatch[1] || "").trim();
@@ -215,8 +282,8 @@ ${historyText}`
 
     let title, body;
     if (lines.length === 0) {
-      title = "来自老公";
-      body = "（空）";
+      console.log("\nBark 内容清洗后为空，本次不发送 Bark\n");
+      eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 内容为空）`;
     } else if (lines.length === 1) {
       title = "来自老公";
       body = lines[0].trim();
@@ -229,38 +296,57 @@ ${historyText}`
       body = lines.slice(1).map(l => l.trim()).join(" ");
     }
 
-    // 保护：截断过长正文（Bark 限制约 500 字符）
-    const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
-    // 若标题为空或以数字开头，加个温柔前缀
-    let safeTitle = title || "来自老公";
-    if (/^\d/.test(safeTitle)) safeTitle = "来自老公｜" + safeTitle;
+    if (!eventContent) {
+      // 保护：截断过长正文（Bark 限制约 500 字符）
+      const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
+      // 若标题为空或以数字开头，加个温柔前缀
+      let safeTitle = title || "来自老公";
+      if (/^\d/.test(safeTitle)) safeTitle = "来自老公｜" + safeTitle;
 
-    const barkPayload = {
-      title: safeTitle,
-      body: safeBody,
-      device_key: process.env.BARK_KEY,
-      icon: process.env.CUSTOM_ICON_URL
-    };
+      if (!process.env.BARK_KEY) {
+        console.log("\n未配置 BARK_KEY，本次不发送 Bark\n");
+        eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark Key 未配置）`;
+      } else {
+        const barkPayload = {
+          title: safeTitle,
+          body: safeBody,
+          device_key: process.env.BARK_KEY,
+          icon: process.env.CUSTOM_ICON_URL
+        };
 
-    // 发送 Bark 推送
-    const barkResponse = await fetch("https://api.day.app/push", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(barkPayload)
-    });
+        // 发送 Bark 推送
+        const barkResponse = await fetch("https://api.day.app/push", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(barkPayload)
+        });
 
-    const barkResult = await barkResponse.json();
-    console.log("\nBark Result:\n", barkResult);
+        const barkTextResult = await barkResponse.text();
+        let barkResult = {};
+        try {
+          barkResult = JSON.parse(barkTextResult);
+        } catch {}
+        console.log("\nBark Result:\n", barkResult || barkTextResult);
 
-    eventContent = `（${getLocalTimeString()} 刚刚给宝宝发了 Bark：${title}｜${body}）`;
+        if (!barkResponse.ok || (barkResult.code && barkResult.code !== 200)) {
+          const reason = barkResult.message || `HTTP ${barkResponse.status}`;
+          eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送 Bark｜原因：Bark 推送失败：${reason}）`;
+        } else {
+          eventContent = `（${getLocalTimeString()} 刚刚给宝宝发了 Bark：${safeTitle}｜${safeBody}）`;
+        }
+      }
+    }
   }
 
   try {
-    await fetch(GATEWAY_URL, {
+    const eventResponse = await fetch(GATEWAY_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content: eventContent })
     });
+    if (!eventResponse.ok) {
+      throw new Error(`Gateway 返回 HTTP ${eventResponse.status}`);
+    }
     console.log("\n已通过 Gateway 记录唤醒事件\n");
   } catch (err) {
     console.error("\n记录唤醒事件失败（Gateway 是否运行？）:\n", err.message);
@@ -278,7 +364,7 @@ async function scheduleNextCheck() {
   try {
     // 发送心跳
     try {
-      await fetch("http://localhost:3000/internal/heartbeat", { method: "POST" });
+      await fetch(HEARTBEAT_URL, { method: "POST" });
     } catch {}
     await runWakeUp();
   } catch (err) {

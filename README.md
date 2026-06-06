@@ -3,6 +3,10 @@
 **一个基于 Kelivo 的 AI Agent 运行时。**  
 它不是“聊天接口转发器”，而是一个让 AI 真正**长期居住**的数字环境。
 
+> 官方使用方式是先 [Fork 本项目](https://github.com/callie0313/dylan-heartbeat/fork)，再 clone 你自己的 fork 进行配置和部署。
+>
+> Dylan Heartbeat 会写入 `.env`、时间线、预设和个性化提示词；Fork 后使用能保留你的个人改动，也方便后续同步上游更新。直接 clone 原仓库也许能跑，但后续改配置、同步更新和部署都会更麻烦，本文档不再提供直接 clone 原仓库的流程。
+
 ---
 
 ## ✨ 核心目标：AI Residency（AI 常驻）
@@ -55,23 +59,26 @@ Bark 推送 → 你的手机
 
 ### 环境要求
 
-- **Node.js** v26 或更高版本
+- **Node.js** v20 或更高版本
 - 一个可用的 LLM API（支持 OpenAI 接口格式的中转站或官方）
 - **Bark** App（iOS）及有效 Key
 - **Kelivo** App（用于前端交互）
 
 ### 安装与配置
 
-#### 获取代码
-因为本项目需要修改时区、唤醒间隔等个性化配置，**建议先 Fork 一份到自己的账号下**，再 clone 你自己的仓库。
+#### Fork-first 获取代码
+因为本项目需要修改时区、唤醒间隔、模型、Bark Key 等个性化配置，**请先 Fork 一份到自己的账号下**，再 clone 你自己的仓库。
+
+不要直接把 `callie0313/dylan-heartbeat` clone 成你的运行目录。直接 clone 会让你的部署目录和上游仓库绑在一起，后续保存自己的改动、同步新版、排查配置差异都会更麻烦。
 
 1. 点击右上角 `Fork` 按钮，将仓库复制到你的 GitHub 账号
-2. 在终端执行：
+2. 从你自己的 fork clone：
    ```bash
    # 请把 YOUR_USERNAME 替换成你的 GitHub 用户名
    git clone https://github.com/YOUR_USERNAME/dylan-heartbeat.git
    cd dylan-heartbeat
    ```
+3. 后续所有配置、部署、二次修改都在你自己的 fork 里完成
 
 #### 安装依赖
 ```bash
@@ -92,21 +99,33 @@ TARGET_API_KEY=sk-你的APIKey
 MODEL_NAME=你的模型
 BARK_KEY=你的Bark设备Key
 CUSTOM_ICON_URL=https://你的图标URL（可选）
+REQUEST_BODY_LIMIT_MB=50
+MULTIMODAL_MODE=text
+PORT=3000
+GATEWAY_BASE_URL=http://localhost:3000
+TIME_ZONE=Europe/London
+RESTART_COMMAND=pm2 restart gateway wake-up
 ADMIN_USER=admin
 ADMIN_PASSWORD=你的强密码
 ```
 
+图片消息说明：
+
+- `REQUEST_BODY_LIMIT_MB`：Gateway 可接收的请求体大小，默认 `50`。Kelivo 发送 base64 图片时请求会明显变大，如果仍然报 `413 Payload Too Large`，可以继续调高。
+- `MULTIMODAL_MODE=text`：默认兼容模式。图片会被转换成 `[图片]` 文本占位继续发给上游模型，避免不支持视觉的模型或中转站报错。
+- `MULTIMODAL_MODE=passthrough`：视觉透传模式。仅当你的上游模型和 API 地址支持 OpenAI 兼容图片消息时使用，Gateway 会保留 Kelivo 原始的多模态 `content` 数组。
+
 ### 时区配置
 
-`wake_up.js` 中的时区默认设置为 `Europe/London`（适用于英国用户）。
+`.env` 中的 `TIME_ZONE` 默认设置为 `Europe/London`（适用于英国用户）。
 
-如果你在其他地区，请修改 `wake_up.js` 第 12 行：
+如果你在其他地区，请修改 `.env`：
 
-```javascript
-// 改为你所在的时区，例如：
-timeZone: "Asia/Shanghai"   // 中国
-timeZone: "America/New_York" // 美国东部
-timeZone: "Asia/Tokyo"       // 日本
+```env
+TIME_ZONE=Asia/Shanghai
+# 或：
+TIME_ZONE=America/New_York
+TIME_ZONE=Asia/Tokyo
 ```
 
 常用时区列表可参考：[Wikipedia 时区列表](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
@@ -146,7 +165,19 @@ http://你的电脑局域网IP:3000/v1/chat/completions
 - 使用 `.env` 中设置的 `ADMIN_USER` 和 `ADMIN_PASSWORD` 登录
 - 实时查看 Gateway 和自动唤醒的运行状态
 - 在线修改 API 地址、Key、模型、Bark Key 等配置
-- **一键重启所有服务**（需配合 pm2 使用）
+- **一键重启服务**（需配合 pm2 使用，默认执行 `pm2 restart gateway wake-up`）
+
+如果你的 pm2 进程名不同，请在 `.env` 中修改：
+
+```env
+RESTART_COMMAND=pm2 restart 你的gateway进程名 你的wake进程名
+```
+
+安全提示：
+
+- 如果用 `http://你的IP:3000/admin` 打开管理页，浏览器可能会提示“即将提交的信息不安全”。这是因为 API Key、Bark Key 等敏感配置正在通过 HTTP 明文传输。
+- 当前管理页保存配置使用 `fetch` 提交，可减少 iOS/浏览器对普通表单提交的弹窗；但这不等于 HTTP 已加密。
+- 如果管理页只在自己可信的本机或局域网短时间使用，风险相对可控。若要放到公网、校园网、公司网或任何不可信网络，请使用 HTTPS 反向代理后再访问管理页。
 
 ---
 
@@ -248,6 +279,15 @@ pm2 startup   # 设置开机自启（根据提示执行）
 - 🕰️ 时间戳记忆库，实现推送精确散落
 - 🛡️ 自动修复不完整的工具调用序列，避免 API 400 错误
 - 🐛 大量稳定性修复和边界情况处理
+
+## 📋 更新日志（2026-06-06）
+
+- 🖼️ 修复 Kelivo 图片/多模态消息处理：默认转换为 `[图片]` 文本占位，也支持视觉模型透传模式。
+- 🔐 优化管理页保存配置流程：改用 `fetch` 提交，补充 HTTP 明文提交提示与 HTTPS 使用建议。
+- 🧯 增强自动唤醒失败保护：模型空回复、Bark Key 缺失、Bark 推送失败时不再误记为已发送。
+- ⚙️ 增加可配置项：`REQUEST_BODY_LIMIT_MB`、`MULTIMODAL_MODE`、`PORT`、`GATEWAY_BASE_URL`、`TIME_ZONE`、`RESTART_COMMAND`。
+- 🛠️ 修复跨平台部署问题：一键重启默认只重启 `gateway` 和 `wake-up`，并声明 Node.js `>=20`。
+- 🍴 强化 Fork-first 使用流程，并修正包元数据中的许可证声明。
 
 ---
 

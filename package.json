@@ -9,8 +9,11 @@
   },
   "keywords": ["fastify", "gateway", "api-gateway", "node-cron", "kelivo"],
   "author": "callie0313",
-  "license": "ISC",
+  "license": "MIT",
   "type": "commonjs",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@fastify/formbody": "^8.0.2",
     "dotenv": "^17.4.2",
