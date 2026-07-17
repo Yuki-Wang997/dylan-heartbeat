@@ -1,6 +1,7 @@
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
+const { buildNtfyPayload } = require("./ntfy_priority");
 
 const TIMELINE_PATH = path.join(__dirname, "enhanced_messages.json");
 const PORT = Number(process.env.PORT) || 3000;
@@ -102,13 +103,13 @@ async function sendPushNotification({ title, body }) {
       "Content-Type": "application/json"
     };
     if (process.env.NTFY_TOKEN) headers.Authorization = `Bearer ${process.env.NTFY_TOKEN}`;
-    const payload = {
+    const payload = buildNtfyPayload({
       topic,
       title,
-      message: body
-    };
-    if (process.env.NTFY_PRIORITY) payload.priority = process.env.NTFY_PRIORITY;
-    if (process.env.NTFY_TAGS) payload.tags = process.env.NTFY_TAGS.split(",").map(tag => tag.trim()).filter(Boolean);
+      message: body,
+      priority: process.env.NTFY_PRIORITY,
+      tags: process.env.NTFY_TAGS
+    });
 
     const response = await fetch(server, {
       method: "POST",

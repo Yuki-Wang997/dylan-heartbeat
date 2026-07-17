@@ -29,7 +29,7 @@
 - [系统架构](#-系统架构)
 - [文件说明](#-文件说明)
 - [已 Fork / 部署过的人怎么更新？](#-已-fork--部署过的人怎么更新)
-- [更新日志](#-更新日志2026-07-11)
+- [更新日志](#-更新日志2026-07-17)
 - [开始教程](#-开始教程)
 - [管理页面](#-管理页面web-控制台)
 - [自动唤醒策略](#-自动唤醒策略)
@@ -97,7 +97,7 @@ npm install
 6. 重启服务：
 
 ```bash
-pm2 restart gateway wake-up
+pm2 restart gateway wake-up --update-env
 ```
 
 如果不是 pm2 部署，就停止旧进程后重新运行：
@@ -122,6 +122,11 @@ node wake_up.js
 - 最后一定要重启 `gateway` 和 `wake-up`
 
 ---
+
+## 📋 更新日志（2026-07-17）
+
+- 📳 修复 ntfy 默认优先级兼容：`NTFY_PRIORITY=default` 或留空时不再发送 `priority` 字段，避免部分兼容服务返回 `invalid request: request body must be valid JSON`；数字 `1`–`5` 会按 JSON 数字发送。
+- ♻️ PM2 重启示例补充 `--update-env`，避免修改推送环境变量后进程继续沿用旧值。
 
 ## 📋 更新日志（2026-07-15）
 
@@ -216,7 +221,7 @@ PUSH_PROVIDER=bark
 NTFY_SERVER_URL=https://ntfy.sh
 NTFY_TOPIC=
 NTFY_TOKEN=
-NTFY_PRIORITY=default
+NTFY_PRIORITY=
 NTFY_TAGS=
 DIARY_ENABLED=true
 DIARY_DIR=diary
@@ -236,7 +241,7 @@ WEATHER_UNITS=metric
 PORT=3000
 GATEWAY_BASE_URL=http://localhost:3000
 TIME_ZONE=Europe/London
-RESTART_COMMAND=pm2 restart gateway wake-up
+RESTART_COMMAND=pm2 restart gateway wake-up --update-env
 ADMIN_USER=admin
 ADMIN_PASSWORD=你的强密码
 ```
@@ -297,12 +302,12 @@ http://你的电脑局域网IP:3000/v1/chat/completions
 - 使用 `.env` 中设置的 `ADMIN_USER` 和 `ADMIN_PASSWORD` 登录
 - 实时查看 Gateway 和自动唤醒的运行状态
 - 在线修改 API 地址、Key、模型、Bark Key 等基础配置
-- **一键重启服务**（需配合 pm2 使用，默认执行 `pm2 restart gateway wake-up`）
+- **一键重启服务**（需配合 pm2 使用，默认执行 `pm2 restart gateway wake-up --update-env`）
 
 如果你的 pm2 进程名不同，请在 `.env` 中修改：
 
 ```env
-RESTART_COMMAND=pm2 restart 你的gateway进程名 你的wake进程名
+RESTART_COMMAND=pm2 restart 你的gateway进程名 你的wake进程名 --update-env
 ```
 
 安全提示：
@@ -388,7 +393,7 @@ PUSH_PROVIDER=ntfy
 NTFY_SERVER_URL=https://ntfy.sh
 NTFY_TOPIC=你的topic
 NTFY_TOKEN=
-NTFY_PRIORITY=default
+NTFY_PRIORITY=
 NTFY_TAGS=
 ```
 
@@ -397,7 +402,8 @@ NTFY_TAGS=
 - `NTFY_SERVER_URL`：ntfy 服务根地址。使用官方公共服务时保持 `https://ntfy.sh`，不要在这里拼接 topic。
 - `NTFY_TOPIC`：你的 ntfy topic。请使用不容易被猜到的随机字符串。
 - `NTFY_TOKEN`：如果你使用自建 ntfy 并开启鉴权，可填写 token；公共 topic 通常留空。
-- `NTFY_PRIORITY` / `NTFY_TAGS`：ntfy 的可选通知参数；多个 tags 用英文逗号分隔，可留空。
+- `NTFY_PRIORITY`：推荐留空以使用默认优先级，也可填写数字 `1`–`5`，或 `min`、`low`、`high`、`max`。旧配置中的 `default` 会自动按留空处理。
+- `NTFY_TAGS`：可选；多个 tags 用英文逗号分隔，可留空。
 
 ---
 
