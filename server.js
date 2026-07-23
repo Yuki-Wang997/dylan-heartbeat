@@ -21,7 +21,7 @@ app.register(require("@fastify/formbody"));
 
 const PORT = Number(process.env.PORT) || 3000;
 const TARGET_API_URL = process.env.TARGET_API_URL;
-const TIMELINE_FILE = "enhanced_messages.json";
+const TIMELINE_FILE = path.join(process.cwd(), "enhanced_messages.json");
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
 // 批注 2026-07-17：管理页保存 .env 后要让 PM2 刷新进程环境；保留原进程名，
 // 只补 --update-env，避免用户改完推送配置却继续运行旧值。
