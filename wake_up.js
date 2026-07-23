@@ -337,6 +337,9 @@ function getLocalTimeString() {
   return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
 }
 
+function getNow() {
+  return new Date();
+}
 function shouldWake(lastUserTime) {
   const now = getNow();
   const diffMinutes = Math.floor((now - new Date(lastUserTime)) / 1000 / 60);
