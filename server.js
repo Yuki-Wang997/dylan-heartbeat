@@ -321,7 +321,7 @@ function isSystemRule(msg) {
 // 构建 Timeline
 // ========================
 function buildTimeline(kelivoMessages, tsDB) {
-  const oldTimeline = loadTimeline();
+  const oldTimeline = loadTimeline() || [];
   const newSystemMessages = kelivoMessages
     .filter(msg => msg.role === "system")
     .map(normalizeMessageForTimeline);
