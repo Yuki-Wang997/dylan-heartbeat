@@ -354,6 +354,7 @@ function parseTimelineTimestamp(value) {
 }
 
 function getLastUserTime(messages) {
+  if (!messages || messages.length === 0) return null;
   const reversed = [...messages].reverse();
   for (const msg of reversed) {
     if (msg.role === "user") {
