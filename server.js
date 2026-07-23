@@ -1,5 +1,11 @@
 require("dotenv").config();
 
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
 console.log("ALLOW_PUBLIC_API runtime:", process.env.ALLOW_PUBLIC_API);
 console.log("GATEWAY_API_KEY exists:", !!process.env.GATEWAY_API_KEY);
 
@@ -196,20 +202,26 @@ function safeJsonForInlineScript(value) {
 // ========================
 // 读取 timeline
 // ========================
-function loadTimeline() {
-  if (!fs.existsSync(TIMELINE_FILE)) return [];
-  try { return fs.readJsonSync(TIMELINE_FILE); } catch { return []; }
+async function loadTimeline() {
+  const { data, error } = await supabase
+    .from("timeline")
+    .select("id, role, content")
+    .order("id", { ascending: true });
+  if (error) { console.error("loadTimeline error:", error.message); return []; }
+  return (data || []).map(row => ({ role: row.role, content: row.content }));
 }
 
-// ========================
-// 保存 timeline（保留 SP）
-// ========================
-function saveTimeline(messages) {
+async function saveTimeline(messages) {
   const sp = messages.find(m => m.role === "system");
   const nonSP = messages.filter(m => m.role !== "system");
   const trimmed = nonSP.slice(-49);
   const final = sp ? [sp, ...trimmed] : trimmed;
-  fs.writeJsonSync(TIMELINE_FILE, final, { spaces: 2 });
+
+  await supabase.from("timeline").delete().neq("id", 0);
+  if (final.length === 0) return;
+  const rows = final.map(m => ({ role: m.role, content: m.content }));
+  const { error } = await supabase.from("timeline").insert(rows);
+  if (error) console.error("saveTimeline error:", error.message);
 }
 
 // ========================
