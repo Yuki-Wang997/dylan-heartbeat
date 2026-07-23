@@ -1,6 +1,7 @@
+require("dotenv").config();
+
 console.log("ALLOW_PUBLIC_API runtime:", process.env.ALLOW_PUBLIC_API);
 console.log("GATEWAY_API_KEY exists:", !!process.env.GATEWAY_API_KEY);
-require("dotenv").config();
 
 const Fastify = require("fastify");
 const fs = require("fs-extra");
