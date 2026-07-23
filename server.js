@@ -320,7 +320,7 @@ function isSystemRule(msg) {
 // ========================
 // 构建 Timeline
 // ========================
-async function await buildTimeline(kelivoMessages, tsDB) {
+async function buildTimeline(kelivoMessages, tsDB) {
   const oldTimeline = await loadTimeline();
   const newSystemMessages = kelivoMessages
     .filter(msg => msg.role === "system")
