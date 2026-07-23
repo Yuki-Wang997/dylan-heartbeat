@@ -591,7 +591,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
       .filter(Boolean);
 
     const oldEvents = stripPosition(
-      oldTimeline.filter(isSpecialEvent).sort((a, b) => {
+      finalTimeline.filter(isSpecialEvent).sort((a, b) => {
         const timeA = extractTimestampWithMemory(a, tsDB);
         const timeB = extractTimestampWithMemory(b, tsDB);
         if (timeA && timeB) return timeA - timeB;
