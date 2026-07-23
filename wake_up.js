@@ -418,7 +418,7 @@ async function runWakeUp() {
   console.log("开始自动唤醒");
   console.log("==========================\n");
 
-  const messages = loadTimelineMessages();
+  const messages = await loadTimelineMessages();
   if (!messages) return;
 
   const lastUserTime = getLastUserTime(messages);
