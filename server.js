@@ -1,9 +1,11 @@
 require("dotenv").config();
 
+const WebSocket = require("ws");
 const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
+  process.env.SUPABASE_KEY,
+  { realtime: { transport: WebSocket }}
 );
 
 console.log("ALLOW_PUBLIC_API runtime:", process.env.ALLOW_PUBLIC_API);
