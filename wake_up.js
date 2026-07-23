@@ -1,4 +1,11 @@
 require("dotenv").config();
+
+const { createClient } = require("@supabase/supabase-js");
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_KEY
+);
+
 const fs = require("fs");
 const path = require("path");
 const { buildNtfyPayload } = require("./ntfy_priority");
@@ -297,27 +304,20 @@ async function fetchWeatherContext() {
   }
 }
 
-function loadTimelineMessages() {
-  if (!fs.existsSync(TIMELINE_PATH)) {
-    console.log("未找到 enhanced_messages.json");
+async function loadTimelineMessages() {
+  const { data, error } = await supabase
+    .from("timeline")
+    .select("id, role, content")
+    .order("id", { ascending: true });
+  if (error) {
+    console.error("loadTimelineMessages error:", error.message);
     return null;
   }
-
-  try {
-    const parsed = JSON.parse(fs.readFileSync(TIMELINE_PATH, "utf-8"));
-    if (!Array.isArray(parsed)) {
-      console.log("enhanced_messages.json 格式错误：顶层不是数组");
-      return null;
-    }
-    return parsed;
-  } catch (err) {
-    console.error("读取 enhanced_messages.json 失败:", err.message);
+  if (!data || data.length === 0) {
+    console.log("Supabase timeline 表为空");
     return null;
   }
-}
-
-function getNow() {
-  return new Date();
+  return data.map(row => ({ role: row.role, content: row.content }));
 }
 
 function getChinaTimeString() {
