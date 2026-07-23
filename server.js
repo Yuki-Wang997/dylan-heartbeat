@@ -400,7 +400,7 @@ async function buildTimeline(kelivoMessages, tsDB) {
 // ========================
 // 追加特殊事件
 // ========================
-function appendSpecialEvent(content) {
+async function appendSpecialEvent(content) {
   const timeline = await loadTimeline();
   let maxPos = 0;
   for (const msg of timeline) {
