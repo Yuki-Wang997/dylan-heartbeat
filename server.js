@@ -320,7 +320,7 @@ function isSystemRule(msg) {
 // ========================
 // 构建 Timeline
 // ========================
-async function buildTimeline(kelivoMessages, tsDB) {
+async function await buildTimeline(kelivoMessages, tsDB) {
   const oldTimeline = await loadTimeline();
   const newSystemMessages = kelivoMessages
     .filter(msg => msg.role === "system")
@@ -581,7 +581,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     }
     if (tsDBDirty) saveTimestampDB(tsDB);
 
-    const finalTimeline = buildTimeline(kelivoMessages, tsDB);
+    const finalTimeline = await buildTimeline(kelivoMessages, tsDB);
     saveTimeline(finalTimeline);
 
     // Kelivo 发图时 content 常是数组。默认原样透传给视觉模型；
