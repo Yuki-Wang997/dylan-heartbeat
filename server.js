@@ -565,7 +565,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     }));
 
     const kelivoMessages = body.messages || [];
-    const oldTimeline = loadTimeline();
+    const oldTimeline = loadTimeline() || [];
 
     const tsDB = loadTimestampDB();
     let tsDBDirty = false;
