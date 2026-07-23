@@ -22,6 +22,8 @@ const app = Fastify({
 app.register(require("@fastify/formbody"));
 
 const PORT = Number(process.env.PORT) || 3000;
+console.log("DEBUG ALLOW_PUBLIC_API =", process.env.ALLOW_PUBLIC_API);
+console.log("DEBUG GATEWAY_API_KEY =", process.env.GATEWAY_API_KEY ? "存在" : "不存在");
 const TARGET_API_URL = process.env.TARGET_API_URL;
 const TIMELINE_FILE = path.join(process.cwd(), "enhanced_messages.json");
 const TIMESTAMP_DB_FILE = "./message_timestamps.json";
