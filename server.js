@@ -320,8 +320,8 @@ function isSystemRule(msg) {
 // ========================
 // 构建 Timeline
 // ========================
-function buildTimeline(kelivoMessages, tsDB) {
-  const oldTimeline = loadTimeline() || [];
+async function buildTimeline(kelivoMessages, tsDB) {
+  const oldTimeline = await loadTimeline();
   const newSystemMessages = kelivoMessages
     .filter(msg => msg.role === "system")
     .map(normalizeMessageForTimeline);
@@ -401,7 +401,7 @@ function buildTimeline(kelivoMessages, tsDB) {
 // 追加特殊事件
 // ========================
 function appendSpecialEvent(content) {
-  const timeline = loadTimeline();
+  const timeline = await loadTimeline();
   let maxPos = 0;
   for (const msg of timeline) {
     if (msg.position && msg.position > maxPos) maxPos = msg.position;
@@ -565,7 +565,7 @@ app.post("/v1/chat/completions", async (req, reply) => {
     }));
 
     const kelivoMessages = body.messages || [];
-    const oldTimeline = loadTimeline() || [];
+    const oldTimeline = await loadTimeline();
 
     const tsDB = loadTimestampDB();
     let tsDBDirty = false;
