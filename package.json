@@ -16,6 +16,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "ws": "^8.18.0",
     "@supabase/supabase-js": "^2.45.0",
     "@fastify/formbody": "^8.0.2",
     "dotenv": "^17.4.2",
