@@ -649,3 +649,5 @@ setTimeout(scheduleNextCheck, 10_000);
 console.log("\n==================================");
 console.log("Dylan Heartbeat Runtime 已启动（动态间隔）");
 console.log("==================================\n");
+
+module.exports = { runWakeUp };
