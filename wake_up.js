@@ -359,8 +359,16 @@ if (!match) return null;
 function getLastUserTime(messages) {
   if (!messages || messages.length === 0) return null;
   const reversed = [...messages].reverse();
-  for (const msg of reversed) {
-    if (msg.role === "user") {
+for (const msg of reversed) {
+  if (msg.role === "user") {
+    console.log("找到user消息，content前50字:", String(msg.content).slice(0, 50));
+    const content = normalizeContentToText(msg.content);
+    console.log("normalize后前50字:", String(content).slice(0, 50));
+    const parsed = parseTimelineTimestamp(content);
+    console.log("parsed结果:", parsed);
+    if (parsed) return parsed;
+  }
+}
       const content = normalizeContentToText(msg.content);
       // 批注 2026-07-15：兼容 Kelivo 时间前缀 "YYYY-MM-DDHH:mm"；
       // 旧的 "YYYY-MM-DD HH:mm" 仍然可用，避免无空格时间导致 wake-up 误判没有用户时间。
