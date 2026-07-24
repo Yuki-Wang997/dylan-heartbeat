@@ -219,11 +219,23 @@ async function saveTimeline(messages) {
   const trimmed = nonSP.slice(-49);
   const final = sp ? [sp, ...trimmed] : trimmed;
 
-  await supabase.from("timeline").delete().neq("id", 0);
   if (final.length === 0) return;
-  const rows = final.map(m => ({ role: m.role, content: m.content }));
-  const { error } = await supabase.from("timeline").insert(rows);
-  if (error) console.error("saveTimeline error:", error.message);
+
+// 1. 先insert新数据
+const rows = final.map(m => ({ role: m.role, content: m.content }));
+const { error } = await supabase.from("timeline").insert(rows);
+if (error) console.error("saveTimeline error:", error.message);
+
+// 2. 查出所有id，按created_at倒序
+const { data: all } = await supabase
+  .from("timeline")
+  .select("id")
+  .order("created_at", { ascending: false });
+
+// 3. 超过50条的删掉
+if (all && all.length > 50) {
+  const toDelete = all.slice(50).map(r => r.id);
+  await supabase.from("timeline").delete().in("id", toDelete);
 }
 
 // ========================
