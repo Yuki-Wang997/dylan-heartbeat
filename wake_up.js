@@ -434,10 +434,12 @@ async function runWakeUp() {
   const now = new Date();
   const diffMinutes = Math.floor((now - lastUserTime) / 1000 / 60);
 
-  if (!shouldWake(lastUserTime)) {
-    console.log("\n暂不需要唤醒\n");
-    return;
-  }
+  console.log("diffMinutes:", diffMinutes);
+console.log("shouldWake结果:", shouldWake(lastUserTime));
+if (!shouldWake(lastUserTime)) {
+  console.log("\n暂不需要唤醒\n");
+  return;
+}
 
   const weatherContext = await fetchWeatherContext();
   const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes, weatherContext);
