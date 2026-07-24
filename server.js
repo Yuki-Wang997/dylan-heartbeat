@@ -1716,6 +1716,55 @@ app.post("/internal/heartbeat", async (req, reply) => {
 });
 
 // ========================
+// 手动触发唤醒（快捷指令调用）
+// ========================
+app.post("/wake", async (req, reply) => {
+  // 简单鉴权，防止随意调用
+  const token = req.headers["x-wake-token"] || "";
+  const configuredToken = process.env.WAKE_TOKEN || "";
+  if (configuredToken && token !== configuredToken) {
+    return reply.code(401).send({ error: "unauthorized" });
+  }
+
+  // 记录触发来源（app_name 由快捷指令传入）
+  const appName = req.body?.app_name || "未知App";
+  console.log(`\n📱 快捷指令触发唤醒，来源：${appName}\n`);
+
+  // 异步跑wake逻辑，不等结果，立刻回复快捷指令
+  reply.send({ success: true, app: appName });
+
+  // 把app打开事件写入phone_activity
+  try {
+    await supabase.from("phone_activity").insert({ app_name: appName });
+  } catch (err) {
+    console.log("写入phone_activity失败:", err.message);
+  }
+
+  // 触发wake_up
+  try {
+    await fetch(GATEWAY_URL.replace("/internal/wake-event", "/internal/trigger-wake"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: appName })
+    });
+  } catch {}
+});
+
+// ========================
+// 内部：被/wake触发的立即唤醒
+// ========================
+app.post("/internal/trigger-wake", async (req, reply) => {
+  reply.send({ ok: true });
+  // 动态import wake_up逻辑——直接调runWakeUp
+  try {
+    const { runWakeUp } = require("./wake_up");
+    await runWakeUp();
+  } catch (err) {
+    console.error("trigger-wake error:", err.message);
+  }
+});
+
+// ========================
 // 管理页一键重启
 // ========================
 app.post("/admin/restart", { preHandler: basicAuth }, async (req, reply) => {
