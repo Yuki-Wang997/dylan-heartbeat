@@ -372,16 +372,6 @@ function getLastUserTime(messages) {
   return null;
 }
 
-      const content = normalizeContentToText(msg.content);
-      // 批注 2026-07-15：兼容 Kelivo 时间前缀 "YYYY-MM-DDHH:mm"；
-      // 旧的 "YYYY-MM-DD HH:mm" 仍然可用，避免无空格时间导致 wake-up 误判没有用户时间。
-      const parsed = parseTimelineTimestamp(content);
-      if (parsed) return parsed;
-    }
-  }
-  return null;
-}
-
 function stripPosition(messages) {
   return messages.map(({ position, ...rest }) => rest);
 }
