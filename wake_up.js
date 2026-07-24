@@ -348,10 +348,9 @@ function shouldWake(lastUserTime) {
 
 function parseTimelineTimestamp(value) {
   const text = String(value || "");
-  const match = text.match(/（?\s*(\d{4})([-/])(\d{1,2})\2(\d{1,2})(?:[ T]?)(\d{1,2})[:：](\d{2})/);
-  console.log("parseTimestamp input:", text.slice(0, 50), "match:", match);
-  if (!match) return null;
-  const [, yyyy, , month, day, hour, minute] = match;
+  const match = text.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T](\d{1,2})[:：](\d{2})/);
+if (!match) return null;
+  const [, yyyy, month, day, hour, minute] = match;
   const normalized = `${yyyy}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")} ${String(hour).padStart(2, "0")}:${minute}`;
   const parsed = new Date(`${normalized.replace(" ", "T")}:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
