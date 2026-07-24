@@ -525,7 +525,6 @@ const wakePrompt = buildWakePrompt(
 ) + historyText;
 
 const cleanMessages = stripPosition(messages);
-  const cleanMessages = stripPosition(messages);
 
   const historyText = cleanMessages
     .filter(msg => msg.role !== "system")
