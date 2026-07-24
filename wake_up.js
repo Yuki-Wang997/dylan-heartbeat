@@ -526,7 +526,7 @@ const wakePrompt = buildWakePrompt(
 
 const cleanMessages = stripPosition(messages);
 
-  const historyText = cleanMessages
+  const messagesText = cleanMessages
     .filter(msg => msg.role !== "system")
     .filter(msg => {
       const c = normalizeContentToText(msg.content);
@@ -567,7 +567,7 @@ const cleanMessages = stripPosition(messages);
 
 最近记录：
 
-${historyText}`
+${messagesText}`
     }
   ];
 
