@@ -507,7 +507,24 @@ if (!shouldWake(lastUserTime)) {
 }
 
   const weatherContext = await fetchWeatherContext();
-  const wakePrompt = buildWakePrompt(getChinaTimeString(), diffMinutes, weatherContext);
+  const history = getWakeHistory();
+
+const historyText = history.length
+  ? `
+最近主动发送过的消息：
+${history.map((h, i) => `${i + 1}. ${h.content}`).join("\n")}
+
+请避免生成相似内容。
+`
+  : "";
+
+const wakePrompt = buildWakePrompt(
+  getChinaTimeString(),
+  diffMinutes,
+  weatherContext
+) + historyText;
+
+const cleanMessages = stripPosition(messages);
   const cleanMessages = stripPosition(messages);
 
   const historyText = cleanMessages
