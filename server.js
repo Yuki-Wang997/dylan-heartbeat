@@ -1718,7 +1718,7 @@ app.post("/internal/heartbeat", async (req, reply) => {
 // ========================
 // 手动触发唤醒（快捷指令调用）
 // ========================
-app.post("/wake", async (req, reply) => {
+app.post("/v1/wake", async (req, reply) => {
   const token = req.headers["x-wake-token"] || "";
   const configuredToken = process.env.WAKE_TOKEN || "";
   if (configuredToken && token !== configuredToken) {
