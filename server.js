@@ -783,7 +783,7 @@ app.post("/trigger-wakeup", async (req, reply) => {
     reply.code(500).send({ error: err.message });
   }
 });
-
+app.post("/phone-activity", async (req, reply) => {
   console.log("进入phone-activity接口");
 
   try {
