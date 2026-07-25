@@ -781,6 +781,18 @@ app.post("/trigger-wakeup", async (req, reply) => {
       message: "唤醒任务已开始"
     });
 
+    const cooldown = Number(process.env.APP_TRIGGER_COOLDOWN_MINUTES || 30);
+
+const lastTrigger = global.lastWakeTriggerTime || 0;
+const now = Date.now();
+
+if (now - lastTrigger < cooldown * 60 * 1000) {
+  console.log("唤醒冷却中，本次跳过");
+  return;
+}
+
+global.lastWakeTriggerTime = now;
+    
     runWakeUp().catch(err => {
       console.error("后台唤醒失败:", err);
     });
