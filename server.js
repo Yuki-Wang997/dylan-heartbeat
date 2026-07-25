@@ -803,6 +803,7 @@ if (now - lastTrigger < cooldown * 60 * 1000) {
  
 app.post("/phone-activity", async (req, reply) => {
   console.log("进入phone-activity接口");
+  console.log("收到body:", req.body);
 
   try {
     const { app_name, opened_at } = req.body || {};
