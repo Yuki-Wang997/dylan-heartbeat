@@ -455,9 +455,23 @@ function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", phoneAct
 当前时间：${currentTime}
 距离用户最后消息：${diffMinutes} 分钟
 
+${phoneActivityText ? `
+
+## 最近手机活动
+${phoneActivityText}
+
+手机活动只是辅助参考：
+- 不要因为用户打开某个 App 就主动联系。
+- 需要结合聊天上下文判断是否有自然延续。
+- 如果手机活动与聊天无关，可以忽略。
+` : ""}
+
 ${weatherContext ? `\n${weatherContext}\n` : ""}
 
 ## 判断规则
+
+- 最近主动发送过的消息已经提供给你，请避免重复相似表达。
+- 不要为了保持连续而强行延续已经结束的话题。
 
 请综合考虑：
 - 最近聊天内容
