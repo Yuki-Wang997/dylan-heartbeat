@@ -7,6 +7,20 @@ const supabase = createClient(
   process.env.SUPABASE_KEY,
 { realtime: { transport: WebSocket }}
 );
+async function getRecentPhoneActivity() {
+  const { data, error } = await supabase
+    .from("phone_activity")
+    .select("*")
+    .order("opened_at", { ascending: false })
+    .limit(10);
+
+  if (error) {
+    console.log("读取手机活动失败:", error);
+    return [];
+  }
+
+  return data || [];
+}
 
 const fs = require("fs");
 const path = require("path");
