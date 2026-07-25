@@ -741,6 +741,8 @@ const pushResult = await sendPushNotification({ title: safeTitle, body: safeBody
       } else {
   saveWakeHistory(safeBody);
 
+  global.lastWakeTriggerTime = Date.now();
+        
   eventContent = `（${getLocalTimeString()} 刚刚给用户发了${pushResult.providerLabel}推送：${safeTitle}｜${safeBody}）`;
 }
     }
