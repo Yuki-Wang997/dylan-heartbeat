@@ -783,8 +783,8 @@ app.post("/phone-activity", async (req, reply) => {
   console.log("进入phone-activity接口");
 
   try {
-    const { app_name, opened_at } = req.body;
-
+    const { app_name, opened_at } = req.body || {};
+    
     if (!app_name) {
       return reply.code(400).send({ error: "app_name is required" });
     }
