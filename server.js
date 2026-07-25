@@ -769,6 +769,8 @@ app.post("/internal/wake-event", async (req, reply) => {
 });
 
 app.post("/phone-activity", async (req, reply) => {
+  console.log("进入phone-activity接口");
+
   try {
     const { app_name, opened_at } = req.body;
 
