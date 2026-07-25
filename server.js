@@ -1,5 +1,6 @@
 require("dotenv").config();
 
+const { runWakeUp } = require("./wake_up");
 const WebSocket = require("ws");
 const { createClient } = require("@supabase/supabase-js");
 const supabase = createClient(
@@ -1855,3 +1856,7 @@ app.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
   }
   console.log(`✅ Gateway 运行在 ${address}`);
 });
+
+module.exports = {
+  runWakeUp
+};
