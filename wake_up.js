@@ -512,21 +512,17 @@ if (!shouldWake(lastUserTime)) {
   const history = getWakeHistory();
 
 const historyText = history.length
-  const historyText = history.length
   ? `
 ## 最近主动唤醒记录
 
-以下是你最近主动发送给用户的消息：
+这里是你过去主动发送给用户的消息，用于保持连续性，避免失去记忆。
 
 ${history.map((h, i) => `${i + 1}. ${h.content}`).join("\n")}
 
-请参考这些记录保持连续性：
-- 可以自然延续之前的话题
-- 可以根据时间变化继续关心用户状态
-- 可以承接上一条主动消息
-- 不要机械重复完全相同的话
-
-这些记录不是限制，而是帮助你理解之前发生过什么。
+请注意：
+- 当前聊天记录优先级更高，请优先参考用户最近说的话。
+- 可以自然延续之前的话题。
+- 不要机械重复之前发送过的内容。
 `
   : "";
 
