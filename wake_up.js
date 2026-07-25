@@ -555,8 +555,9 @@ ${phoneActivity.map(
 const wakePrompt = buildWakePrompt(
   getChinaTimeString(),
   diffMinutes,
-  weatherContext
-) + historyText + phoneActivityText;
+  weatherContext,
+  phoneActivityText
+) + historyText;
 
 const cleanMessages = stripPosition(messages);
 
