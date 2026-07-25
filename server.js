@@ -790,8 +790,6 @@ if (now - lastTrigger < cooldown * 60 * 1000) {
   console.log("唤醒冷却中，本次跳过");
   return;
 }
-
-global.lastWakeTriggerTime = now;
     
     runWakeUp().catch(err => {
       console.error("后台唤醒失败:", err);
