@@ -768,6 +768,35 @@ app.post("/internal/wake-event", async (req, reply) => {
   }
 });
 
+app.post("/phone-activity", async (req, reply) => {
+  try {
+    const { app_name, opened_at } = req.body;
+
+    if (!app_name) {
+      return reply.code(400).send({ error: "app_name is required" });
+    }
+
+    const { error } = await supabase
+      .from("phone_activity")
+      .insert({
+        app_name,
+        opened_at: opened_at || new Date().toISOString()
+      });
+
+    if (error) {
+      console.error("phone_activity写入失败:", error);
+      return reply.code(500).send({ error: error.message });
+    }
+
+    console.log("记录App打开:", app_name);
+
+    reply.send({ success: true });
+  } catch (err) {
+    console.error(err);
+    reply.code(500).send({ error: err.message });
+  }
+});
+
 // ========================
 // 读取 .env 值
 // ========================
