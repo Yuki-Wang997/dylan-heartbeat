@@ -523,6 +523,7 @@ if (!shouldWake(lastUserTime)) {
 }
 
   const weatherContext = await fetchWeatherContext();
+  const phoneActivity = await getRecentPhoneActivity();
   const history = getWakeHistory();
 
 const historyText = history.length
