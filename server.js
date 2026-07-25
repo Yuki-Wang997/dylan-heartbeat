@@ -531,6 +531,7 @@ function readRestartCommand() {
 // ========================
 app.addHook("onRequest", (req, reply, done) => {
   if (req.url === "/phone-activity") return done();
+  if (req.url.startsWith("/trigger-wakeup")) return done();
   
   if (req.url.startsWith("/admin")) return done();
   // 批注 2026-07-15：公网部署常经过反代，真实公网请求可能在 Node 侧显示为 127/10 网段；
