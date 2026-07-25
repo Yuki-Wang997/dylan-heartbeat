@@ -778,7 +778,7 @@ app.post("/trigger-wakeup", async (req, reply) => {
     message: "trigger正常"
   });
 });
-  } catch (err) {
+ 
     console.error(err);
     reply.code(500).send({ error: err.message });
   }
