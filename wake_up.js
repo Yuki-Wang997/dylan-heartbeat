@@ -21,6 +21,8 @@ function getWakeHistory() {
 }
 
 function saveWakeHistory(content) {
+  console.log("保存主动消息:", content);
+  
   const history = getWakeHistory();
 
   history.unshift({
