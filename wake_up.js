@@ -541,11 +541,22 @@ ${history.map((h, i) => `${i + 1}. ${h.content}`).join("\n")}
 `
   : "";
 
+const phoneActivityText = phoneActivity.length
+  ? `
+## 最近手机活动
+${phoneActivity.map(
+  item => `${item.opened_at}: 打开了${item.app_name}`
+).join("\n")}
+
+这些信息只作为参考，不代表用户希望被打扰。
+`
+  : "";
+
 const wakePrompt = buildWakePrompt(
   getChinaTimeString(),
   diffMinutes,
   weatherContext
-) + historyText;
+) + historyText + phoneActivityText;
 
 const cleanMessages = stripPosition(messages);
 
