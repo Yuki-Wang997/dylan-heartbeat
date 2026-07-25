@@ -460,11 +460,8 @@ function buildWakePrompt(
 当前时间：${currentTime}
 距离用户最后消息：${diffMinutes} 分钟
 
-${phoneActivityText ? `
-
-## 最近手机活动
-${phoneActivityText}
-` : ""}
+最近手机活动：
+${phoneActivityText || "无"}
 
 手机活动只是辅助参考：
 - 不要因为用户打开某个 App 就主动联系。
