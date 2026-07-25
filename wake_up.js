@@ -416,7 +416,12 @@ function stripPosition(messages) {
   return messages.map(({ position, ...rest }) => rest);
 }
 
-function buildWakePrompt(currentTime, diffMinutes, weatherContext = "", phoneActivityText = "") {
+function buildWakePrompt(
+  currentTime,
+  diffMinutes,
+  weatherContext = "",
+  lastOpenedApp = null
+)
   // 优先读取独立的提示词文件（推荐方式）
   const promptFile = path.join(__dirname, "wake_prompt.txt");
   if (fs.existsSync(promptFile)) {
