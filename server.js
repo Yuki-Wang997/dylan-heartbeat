@@ -823,6 +823,11 @@ app.post("/phone-activity", async (req, reply) => {
       return reply.code(500).send({ error: error.message });
     }
 
+    global.lastOpenedApp = {
+  name: app_name,
+  time: opened_at || new Date().toISOString()
+};
+    
     console.log("记录App打开:", app_name);
 
     reply.send({ success: true });
