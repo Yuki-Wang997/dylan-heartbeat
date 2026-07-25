@@ -421,7 +421,7 @@ function buildWakePrompt(
   diffMinutes,
   weatherContext = "",
   phoneActivityText = ""
-)
+) {
   // 优先读取独立的提示词文件（推荐方式）
   const promptFile = path.join(__dirname, "wake_prompt.txt");
   if (fs.existsSync(promptFile)) {
