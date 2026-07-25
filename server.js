@@ -772,12 +772,22 @@ app.post("/internal/wake-event", async (req, reply) => {
 });
 
 app.post("/trigger-wakeup", async (req, reply) => {
-  console.log("收到trigger测试");
+  try {
+    console.log("收到手机活动触发唤醒请求");
 
-  reply.send({
-    success: true,
-    message: "trigger正常"
-  });
+    reply.send({
+      success: true,
+      message: "唤醒任务已开始"
+    });
+
+    runWakeUp().catch(err => {
+      console.error("后台唤醒失败:", err);
+    });
+
+  } catch (err) {
+    console.error(err);
+    reply.code(500).send({ error: err.message });
+  }
 });
  
 app.post("/phone-activity", async (req, reply) => {
