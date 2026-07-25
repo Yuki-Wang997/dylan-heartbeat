@@ -774,14 +774,18 @@ app.post("/trigger-wakeup", async (req, reply) => {
   try {
     console.log("收到手机活动触发唤醒请求");
 
-    await runWakeUp();
+    reply.send({ success: true, message: "唤醒任务已开始" });
 
-    reply.send({ success: true });
+    runWakeUp().catch(err => {
+      console.error("后台唤醒失败:", err);
+    });
+
   } catch (err) {
-    console.error("触发唤醒失败:", err);
+    console.error(err);
     reply.code(500).send({ error: err.message });
   }
 });
+
   console.log("进入phone-activity接口");
 
   try {
