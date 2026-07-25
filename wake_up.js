@@ -709,11 +709,17 @@ ${messagesText}`
     if (!eventContent) {
       // 保护：截断过长正文，兼容 Bark 和 ntfy 的移动端展示。
       const safeBody = body.length > 500 ? body.substring(0, 497) + "..." : body;
-      // 若标题为空或以数字开头，加个前缀，可自行修改
-      let safeTitle = title || "来自伴侣";
-      if (/^\d/.test(safeTitle)) safeTitle = "来自伴侣｜" + safeTitle;
 
-      const pushResult = await sendPushNotification({ title: safeTitle, body: safeBody });
+if (safeBody.includes("[NO_ACTION]")) {
+  console.log("\nAI决定不唤醒，不发送推送\n");
+  return;
+}
+
+// 若标题为空或以数字开头，加个前缀，可自行修改
+let safeTitle = title || "来自伴侣";
+if (/^\d/.test(safeTitle)) safeTitle = "来自伴侣｜" + safeTitle;
+
+const pushResult = await sendPushNotification({ title: safeTitle, body: safeBody });
       if (!pushResult.ok) {
         console.log(`\n${pushResult.providerLabel} 推送失败，本次不发送推送\n`);
         eventContent = `（${getLocalTimeString()} 自动唤醒：本次未发送推送｜原因：${pushResult.providerLabel} 推送失败：${pushResult.reason}）`;
